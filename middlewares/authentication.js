@@ -1,24 +1,31 @@
 const jwt = require('jsonwebtoken')
-const {verifyToken} = require("../utils");
+const {verifyToken, attachCookiesToResponse} = require("../utils");
+const Token = require('../models/token')
 require('dotenv').config()
 
 const authenticateUser = async (req,res,next) =>{
-   const token = req.signedCookies.token
-    if(token){
-        try {
-            console.log(token)
-            const decodedToken = await verifyToken({token})
-            req.user = {userId:decodedToken.userId,email:decodedToken.email,role:decodedToken.role,name:decodedToken.name}
-            console.log(decodedToken)
-        }catch (e) {
-            console.log(e)
+    const {accessToken,refreshToken} = req.signedCookies
+    try {
+     if(accessToken){
+            const decodedToken = verifyToken(accessToken)
+            req.user = decodedToken.user
+            return next()
         }
-    }else{
-       return res.status(401).json({message:'Please login first'})
-    }
-    next()
-}
+        console.log('we are here')
+        const decodedToken = verifyToken(refreshToken)
+        const checkTokenExistence =  await Token.findOne({user:decodedToken.user.userId,refreshToken:decodedToken.refreshToken})
+        console.log(checkTokenExistence)
 
+        if(!checkTokenExistence || !checkTokenExistence?.isValid){
+            return res.status(401).json({message:'Authentication Failed'})
+        }
+        attachCookiesToResponse({res,user:decodedToken.user,refreshToken:checkTokenExistence.refreshToken})
+        req.user = decodedToken.user
+        next()
+    }catch (e) {
+        console.log(e)
+    }
+}
 const authorizeUser = (...roles)=>{
     return (req,res,next)=>{
         if(!roles.includes(req.user.role)){
